@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">系统侧截图防火墙</string>
+    <string name="xposed_description">在 system_server 记录和按规则处理 FLAG_SECURE 与 Android 14+ 官方截图回执</string>
+</resources>

@@ -1,0 +1,20 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "t8numen.screenshotfirewall"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "t8numen.screenshotfirewall"
+        minSdk 24
+        targetSdk 35
+        versionCode 23
+        versionName "1.0.22"
+    }
+}
+
+dependencies {
+    compileOnly "de.robv.android.xposed:api:82"
+}

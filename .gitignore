@@ -1,0 +1,11 @@
+.android/
+.android-local/
+.gradle/
+.gradle-local/
+build/
+app/build/
+local.properties
+HANDOFF.md
+screenshot-firewall-ui-*.xml
+screenshot-firewall-ui-*.png
+screenshot-firewall-v*-prompt.png
