@@ -75,14 +75,38 @@ final class SystemUiPromptBridge {
                             ExternalPolicyStore.sendPolicyResult(appContext);
                         } else if (PromptContract.ACTION_POLICY_SET.equals(action)) {
                             String packageName = intent.getStringExtra(PromptContract.EXTRA_PACKAGE);
+                            String activityName = intent.getStringExtra(PromptContract.EXTRA_ACTIVITY);
                             String feature = intent.getStringExtra(PromptContract.EXTRA_FEATURE);
                             String policy = intent.getStringExtra(PromptContract.EXTRA_POLICY);
-                            ExternalPolicyStore.setPolicy(appContext, feature, packageName, policy);
+                            String oldPackageName = intent.getStringExtra(
+                                    PromptContract.EXTRA_OLD_PACKAGE);
+                            String oldActivityName = intent.getStringExtra(
+                                    PromptContract.EXTRA_OLD_ACTIVITY);
+                            String oldFeature = intent.getStringExtra(
+                                    PromptContract.EXTRA_OLD_FEATURE);
+                            if (oldPackageName != null && oldFeature != null) {
+                                ExternalPolicyStore.clearPolicy(
+                                        appContext,
+                                        oldFeature,
+                                        oldPackageName,
+                                        oldActivityName);
+                            }
+                            ExternalPolicyStore.setPolicy(
+                                    appContext,
+                                    feature,
+                                    packageName,
+                                    activityName,
+                                    policy);
                             ExternalPolicyStore.sendPolicyResult(appContext);
                         } else if (PromptContract.ACTION_POLICY_CLEAR_PACKAGE.equals(action)) {
                             String packageName = intent.getStringExtra(PromptContract.EXTRA_PACKAGE);
+                            String activityName = intent.getStringExtra(PromptContract.EXTRA_ACTIVITY);
                             String feature = intent.getStringExtra(PromptContract.EXTRA_FEATURE);
-                            ExternalPolicyStore.clearPolicy(appContext, feature, packageName);
+                            ExternalPolicyStore.clearPolicy(
+                                    appContext,
+                                    feature,
+                                    packageName,
+                                    activityName);
                             ExternalPolicyStore.sendPolicyResult(appContext);
                         } else if (PromptContract.ACTION_POLICY_CLEAR_ALL.equals(action)) {
                             ExternalPolicyStore.clearAll(appContext);

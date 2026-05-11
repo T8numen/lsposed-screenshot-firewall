@@ -18,8 +18,12 @@ final class PromptContract {
     static final String ACTION_CONFIG_SET =
             "t8numen.screenshotfirewall.action.CONFIG_SET";
     static final String EXTRA_PACKAGE = "package";
+    static final String EXTRA_ACTIVITY = "activity";
     static final String EXTRA_FEATURE = "feature";
     static final String EXTRA_POLICY = "policy";
+    static final String EXTRA_OLD_PACKAGE = "old_package";
+    static final String EXTRA_OLD_ACTIVITY = "old_activity";
+    static final String EXTRA_OLD_FEATURE = "old_feature";
     static final String EXTRA_POLICY_ENTRIES = "policy_entries";
     static final String EXTRA_EVENT_ENTRIES = "event_entries";
     static final String EXTRA_DEFAULT_POLICY = "default_policy";

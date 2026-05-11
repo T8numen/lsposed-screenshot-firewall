@@ -80,6 +80,10 @@ final class PolicyController {
     }
 
     static Decision evaluate(String packageName, String feature) {
+        return evaluate(packageName, feature, "");
+    }
+
+    static Decision evaluate(String packageName, String feature, String activityName) {
         if (TextUtils.isEmpty(packageName)) {
             return Decision.ALLOW;
         }
@@ -93,15 +97,12 @@ final class PolicyController {
             return config.defaultDecision();
         }
 
-        String policyKey = ExternalPolicyStore.policyKey(feature, packageName);
-        String stored = MEMORY_POLICIES.get(policyKey);
-        SharedPreferences prefs = preferences;
-        if (stored == null && prefs != null) {
-            try {
-                stored = prefs.getString(POLICY_PREFIX + policyKey, null);
-            } catch (Throwable throwable) {
-                Logx.e("read policy failed for " + packageName, throwable);
-            }
+        String stored = storedPolicy(ExternalPolicyStore.policyKey(
+                feature,
+                packageName,
+                activityName));
+        if (stored == null && !TextUtils.isEmpty(activityName)) {
+            stored = storedPolicy(ExternalPolicyStore.policyKey(feature, packageName));
         }
 
         if (POLICY_ALLOW.equals(stored)) {
@@ -111,6 +112,19 @@ final class PolicyController {
             return Decision.BLOCK;
         }
         return config.defaultDecision();
+    }
+
+    private static String storedPolicy(String policyKey) {
+        String stored = MEMORY_POLICIES.get(policyKey);
+        SharedPreferences prefs = preferences;
+        if (stored == null && prefs != null) {
+            try {
+                stored = prefs.getString(POLICY_PREFIX + policyKey, null);
+            } catch (Throwable throwable) {
+                Logx.e("read policy failed for " + policyKey, throwable);
+            }
+        }
+        return stored;
     }
 
     private static void syncExternalPolicies() {

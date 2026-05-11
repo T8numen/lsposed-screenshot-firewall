@@ -2,8 +2,12 @@ package t8numen.screenshotfirewall;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
 import android.content.BroadcastReceiver;
+import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
@@ -23,12 +27,16 @@ import android.view.Window;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -79,6 +87,10 @@ public final class OverlayPermissionActivity extends Activity {
     private final Set<String> expandedTimelineGroups = new HashSet<>();
     private final SimpleDateFormat dateFormat =
             new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault());
+    private final SimpleDateFormat rangeDateFormat =
+            new SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault());
+    private final SimpleDateFormat rangeTimeFormat =
+            new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -251,6 +263,7 @@ public final class OverlayPermissionActivity extends Activity {
             String key = entry.substring(0, index);
             String feature = ExternalPolicyStore.policyFeature(key);
             String packageName = ExternalPolicyStore.policyPackage(key);
+            String activityName = ExternalPolicyStore.policyActivity(key);
             String policy = entry.substring(index + 1);
             if (TextUtils.isEmpty(feature)
                     || TextUtils.isEmpty(packageName)
@@ -260,6 +273,7 @@ public final class OverlayPermissionActivity extends Activity {
             PolicyEntry policyEntry = new PolicyEntry(
                     feature,
                     packageName,
+                    activityName,
                     appLabel(packageName),
                     policy);
             policies.add(policyEntry);
@@ -368,6 +382,8 @@ public final class OverlayPermissionActivity extends Activity {
     }
 
     private void renderRules() {
+        contentRoot.addView(newRuleButton(), matchWrap());
+
         sectionTitle("应用禁止截图 (FLAG_SECURE)");
         int flagCount = renderPolicySection(Features.FLAG_SECURE);
         if (flagCount == 0) {
@@ -384,6 +400,17 @@ public final class OverlayPermissionActivity extends Activity {
                     : "暂无截图回执规则。当前全局默认会允许应用收到截图通知。");
         }
 
+    }
+
+    private TextView newRuleButton() {
+        TextView button = actionText("新建规则", COLOR_ACCENT, COLOR_SURFACE, COLOR_ACCENT);
+        button.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showPolicyEditor(null);
+            }
+        });
+        return button;
     }
 
     private void renderGlobalSettings() {
@@ -727,11 +754,25 @@ public final class OverlayPermissionActivity extends Activity {
 
     private View policyRow(final PolicyEntry policy) {
         LinearLayout row = cardRow();
+        row.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                showPolicyEditor(policy);
+            }
+        });
 
         LinearLayout texts = new LinearLayout(this);
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.addView(primary(policy.appLabel), matchWrap());
-        texts.addView(secondary(policy.packageName, 1), matchWrap());
+        texts.addView(copyableSecondary(policy.packageName, 1, "包名", policy.packageName), matchWrap());
+        TextView activity = copyableSecondary(
+                "Activity：" + policyScopeText(policy.packageName, policy.activityName),
+                1,
+                "Activity",
+                policy.activityName);
+        LinearLayout.LayoutParams activityParams = matchWrap();
+        activityParams.topMargin = dp(2);
+        texts.addView(activity, activityParams);
 
         LinearLayout meta = new LinearLayout(this);
         meta.setOrientation(LinearLayout.HORIZONTAL);
@@ -754,11 +795,140 @@ public final class OverlayPermissionActivity extends Activity {
         clear.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                sendPolicyClear(policy.packageName, policy.feature);
+                sendPolicyClear(policy.packageName, policy.feature, policy.activityName);
             }
         });
         row.addView(clear, trailingActionParams());
         return row;
+    }
+
+    private void showPolicyEditor(final PolicyEntry existing) {
+        final LinearLayout form = new LinearLayout(this);
+        form.setOrientation(LinearLayout.VERTICAL);
+        int horizontalPadding = dp(2);
+        form.setPadding(horizontalPadding, dp(8), horizontalPadding, 0);
+
+        final EditText packageInput = dialogInput("包名");
+        final EditText activityInput = dialogInput("Activity（可空，空表示整个包）");
+        if (existing != null) {
+            packageInput.setText(existing.packageName);
+            activityInput.setText(existing.activityName);
+        }
+
+        form.addView(dialogLabel("功能"), matchWrap());
+        final RadioGroup featureGroup = new RadioGroup(this);
+        featureGroup.setOrientation(RadioGroup.VERTICAL);
+        final int flagId = View.generateViewId();
+        final int observerId = View.generateViewId();
+        featureGroup.addView(radioButton(
+                flagId,
+                PolicyDisplayText.feature(Features.FLAG_SECURE)));
+        featureGroup.addView(radioButton(
+                observerId,
+                PolicyDisplayText.feature(Features.SCREEN_CAPTURE_OBSERVER)));
+        featureGroup.check(existing == null || Features.FLAG_SECURE.equals(existing.feature)
+                ? flagId
+                : observerId);
+        form.addView(featureGroup, dialogGroupParams());
+
+        form.addView(dialogLabel("包名"), dialogTopParams());
+        form.addView(packageInput, matchWrap());
+        form.addView(dialogLabel("Activity"), dialogTopParams());
+        form.addView(activityInput, matchWrap());
+
+        form.addView(dialogLabel("结果"), dialogTopParams());
+        final RadioGroup policyGroup = new RadioGroup(this);
+        policyGroup.setOrientation(RadioGroup.VERTICAL);
+        final int allowId = View.generateViewId();
+        final int blockId = View.generateViewId();
+        policyGroup.addView(radioButton(allowId, "允许原始行为"));
+        policyGroup.addView(radioButton(blockId, "拒绝对应能力"));
+        policyGroup.check(existing == null || PolicyController.POLICY_ALLOW.equals(existing.policy)
+                ? allowId
+                : blockId);
+        form.addView(policyGroup, dialogGroupParams());
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(existing == null ? "新建规则" : "编辑规则")
+                .setView(form)
+                .setNegativeButton("取消", null)
+                .setPositiveButton("保存", null)
+                .create();
+        dialog.setOnShowListener(new DialogInterface.OnShowListener() {
+            @Override
+            public void onShow(DialogInterface dialogInterface) {
+                dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(
+                        new View.OnClickListener() {
+                            @Override
+                            public void onClick(View view) {
+                                String packageName = cleanInput(packageInput);
+                                if (TextUtils.isEmpty(packageName)) {
+                                    Toast.makeText(
+                                            OverlayPermissionActivity.this,
+                                            "包名不能为空",
+                                            Toast.LENGTH_SHORT).show();
+                                    return;
+                                }
+                                String activityName = cleanInput(activityInput);
+                                String feature = featureGroup.getCheckedRadioButtonId() == observerId
+                                        ? Features.SCREEN_CAPTURE_OBSERVER
+                                        : Features.FLAG_SECURE;
+                                String policy = policyGroup.getCheckedRadioButtonId() == blockId
+                                        ? PolicyController.POLICY_BLOCK
+                                        : PolicyController.POLICY_ALLOW;
+                                sendPolicySet(packageName, feature, activityName, policy, existing);
+                                dialog.dismiss();
+                            }
+                        });
+            }
+        });
+        dialog.show();
+    }
+
+    private TextView dialogLabel(String text) {
+        TextView label = settingLabel(text);
+        label.setTextSize(13);
+        return label;
+    }
+
+    private EditText dialogInput(String hint) {
+        EditText input = new EditText(this);
+        input.setHint(hint);
+        input.setTextColor(COLOR_TEXT);
+        input.setTextSize(14);
+        input.setSingleLine(true);
+        input.setSelectAllOnFocus(true);
+        input.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+        return input;
+    }
+
+    private RadioButton radioButton(int id, String text) {
+        RadioButton button = new RadioButton(this);
+        button.setId(id);
+        button.setText(text);
+        button.setTextColor(COLOR_TEXT);
+        button.setTextSize(14);
+        button.setMinHeight(dp(38));
+        return button;
+    }
+
+    private LinearLayout.LayoutParams dialogTopParams() {
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = dp(12);
+        return params;
+    }
+
+    private LinearLayout.LayoutParams dialogGroupParams() {
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = dp(4);
+        return params;
+    }
+
+    private String cleanInput(EditText input) {
+        if (input == null || input.getText() == null) {
+            return "";
+        }
+        return input.getText().toString().trim();
     }
 
     private LinearLayout eventModeBar() {
@@ -824,7 +994,7 @@ public final class OverlayPermissionActivity extends Activity {
         title.setEllipsize(TextUtils.TruncateAt.END);
         header.addView(title, matchWrap());
 
-        TextView packageName = secondary(event.packageName, 1);
+        TextView packageName = copyableSecondary(event.packageName, 1, "包名", event.packageName);
         LinearLayout.LayoutParams packageParams = matchWrap();
         packageParams.topMargin = dp(2);
         header.addView(packageName, packageParams);
@@ -871,7 +1041,7 @@ public final class OverlayPermissionActivity extends Activity {
         revoke.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                sendPolicyClear(group.packageName, group.feature);
+                sendPolicyClear(group.packageName, group.feature, "");
             }
         });
         actions.addView(revoke, smallActionParams());
@@ -879,7 +1049,8 @@ public final class OverlayPermissionActivity extends Activity {
         actionParams.topMargin = dp(8);
         card.addView(actions, actionParams);
 
-        card.addView(secondary("包名：" + group.packageName, 2), detailParams());
+        card.addView(copyableSecondary("包名：" + group.packageName, 2, "包名", group.packageName),
+                detailParams());
         boolean expanded = expandedTimelineGroups.contains(group.key);
         card.addView(expandToggleButton(group, expanded ? "折叠" : "展开 " + group.eventCount + " 条"));
         if (!expanded) {
@@ -919,8 +1090,7 @@ public final class OverlayPermissionActivity extends Activity {
     }
 
     private String eventRangeText(TimelineEventGroup group) {
-        return "开始：" + dateFormat.format(new Date(group.startTimeMillis))
-                + " · 结束：" + dateFormat.format(new Date(group.endTimeMillis));
+        return rangeText(group.startTimeMillis, group.endTimeMillis);
     }
 
     private TextView activityTitle(String packageName, String activityName) {
@@ -929,7 +1099,26 @@ public final class OverlayPermissionActivity extends Activity {
                 2);
         view.setTextColor(COLOR_TEXT);
         view.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        attachCopy(view, "Activity", activityName);
         return view;
+    }
+
+    private String rangeText(long startTimeMillis, long endTimeMillis) {
+        Date start = new Date(startTimeMillis);
+        Date end = new Date(endTimeMillis);
+        String endText = sameDay(startTimeMillis, endTimeMillis)
+                ? rangeTimeFormat.format(end)
+                : rangeDateFormat.format(end);
+        return rangeDateFormat.format(start) + " -- " + endText;
+    }
+
+    private boolean sameDay(long leftMillis, long rightMillis) {
+        Calendar left = Calendar.getInstance();
+        Calendar right = Calendar.getInstance();
+        left.setTimeInMillis(leftMillis);
+        right.setTimeInMillis(rightMillis);
+        return left.get(Calendar.YEAR) == right.get(Calendar.YEAR)
+                && left.get(Calendar.DAY_OF_YEAR) == right.get(Calendar.DAY_OF_YEAR);
     }
 
     private String displayActivityName(String packageName, String activityName) {
@@ -952,6 +1141,12 @@ public final class OverlayPermissionActivity extends Activity {
             display = display.substring(dotIndex + 1);
         }
         return TextUtils.isEmpty(display) ? "未知" : display;
+    }
+
+    private String policyScopeText(String packageName, String activityName) {
+        return TextUtils.isEmpty(activityName)
+                ? "全部 Activity"
+                : displayActivityName(packageName, activityName);
     }
 
     private View eventRow(final FeatureEvent event, boolean showAppLabel) {
@@ -981,12 +1176,18 @@ public final class OverlayPermissionActivity extends Activity {
 
         card.addView(top, matchWrap());
         if (showAppLabel) {
-            card.addView(secondary("包名：" + event.packageName, 2), detailParams());
+            card.addView(copyableSecondary(
+                    "包名：" + event.packageName,
+                    2,
+                    "包名",
+                    event.packageName), detailParams());
         }
         if (!TextUtils.isEmpty(event.activityName)) {
-            card.addView(secondary(
+            card.addView(copyableSecondary(
                     "Activity：" + displayActivityName(event.packageName, event.activityName),
-                    2), detailParams());
+                    2,
+                    "Activity",
+                    event.activityName), detailParams());
         }
 
         LinearLayout actions = new LinearLayout(this);
@@ -1004,7 +1205,7 @@ public final class OverlayPermissionActivity extends Activity {
         revoke.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                sendPolicyClear(event.packageName, event.feature);
+                sendPolicyClear(event.packageName, event.feature, "");
             }
         });
         actions.addView(revoke, smallActionParams());
@@ -1042,7 +1243,7 @@ public final class OverlayPermissionActivity extends Activity {
         action.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                sendPolicySet(packageName, feature, policy);
+                sendPolicySet(packageName, feature, "", policy, null);
             }
         });
         actions.addView(action, smallActionParams());
@@ -1111,6 +1312,38 @@ public final class OverlayPermissionActivity extends Activity {
         view.setMaxLines(maxLines);
         view.setEllipsize(TextUtils.TruncateAt.END);
         return view;
+    }
+
+    private TextView copyableSecondary(String text, int maxLines, String label, String value) {
+        TextView view = secondary(text, maxLines);
+        attachCopy(view, label, value);
+        return view;
+    }
+
+    private void attachCopy(View view, final String label, final String value) {
+        if (view == null || TextUtils.isEmpty(value)) {
+            return;
+        }
+        view.setLongClickable(true);
+        view.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View view) {
+                copyText(label, value);
+                return true;
+            }
+        });
+    }
+
+    private void copyText(String label, String value) {
+        if (TextUtils.isEmpty(value)) {
+            return;
+        }
+        ClipboardManager clipboard =
+                (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            clipboard.setPrimaryClip(ClipData.newPlainText(label, value));
+        }
+        Toast.makeText(this, "已复制" + label, Toast.LENGTH_SHORT).show();
     }
 
     private TextView chip(String text, int bgColor, int textColor) {
@@ -1289,13 +1522,29 @@ public final class OverlayPermissionActivity extends Activity {
         sendBroadcast(intent);
     }
 
-    private void sendPolicySet(String packageName, String feature, String policy) {
+    private void sendPolicySet(
+            String packageName,
+            String feature,
+            String activityName,
+            String policy,
+            PolicyEntry oldPolicy) {
         Intent intent = new Intent(PromptContract.ACTION_POLICY_SET);
         intent.setPackage(PromptContract.SYSTEM_UI_PACKAGE);
         intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
         intent.putExtra(PromptContract.EXTRA_PACKAGE, packageName);
+        intent.putExtra(
+                PromptContract.EXTRA_ACTIVITY,
+                TextUtils.isEmpty(activityName) ? "" : activityName);
         intent.putExtra(PromptContract.EXTRA_FEATURE, feature);
         intent.putExtra(PromptContract.EXTRA_POLICY, policy);
+        if (oldPolicy != null
+                && !TextUtils.equals(
+                        oldPolicy.key(),
+                        ExternalPolicyStore.policyKey(feature, packageName, activityName))) {
+            intent.putExtra(PromptContract.EXTRA_OLD_PACKAGE, oldPolicy.packageName);
+            intent.putExtra(PromptContract.EXTRA_OLD_ACTIVITY, oldPolicy.activityName);
+            intent.putExtra(PromptContract.EXTRA_OLD_FEATURE, oldPolicy.feature);
+        }
         sendBroadcast(intent);
     }
 
@@ -1309,11 +1558,14 @@ public final class OverlayPermissionActivity extends Activity {
         sendBroadcast(intent);
     }
 
-    private void sendPolicyClear(String packageName, String feature) {
+    private void sendPolicyClear(String packageName, String feature, String activityName) {
         Intent intent = new Intent(PromptContract.ACTION_POLICY_CLEAR_PACKAGE);
         intent.setPackage(PromptContract.SYSTEM_UI_PACKAGE);
         intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND);
         intent.putExtra(PromptContract.EXTRA_PACKAGE, packageName);
+        intent.putExtra(
+                PromptContract.EXTRA_ACTIVITY,
+                TextUtils.isEmpty(activityName) ? "" : activityName);
         intent.putExtra(PromptContract.EXTRA_FEATURE, feature);
         sendBroadcast(intent);
     }

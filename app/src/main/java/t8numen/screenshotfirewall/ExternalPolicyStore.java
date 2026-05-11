@@ -51,7 +51,12 @@ final class ExternalPolicyStore {
         return Settings.Global.getString(context.getContentResolver(), SETTINGS_POLICIES) != null;
     }
 
-    static void setPolicy(Context context, String feature, String packageName, String policy) {
+    static void setPolicy(
+            Context context,
+            String feature,
+            String packageName,
+            String activityName,
+            String policy) {
         if (context == null
                 || TextUtils.isEmpty(feature)
                 || TextUtils.isEmpty(packageName)
@@ -59,20 +64,24 @@ final class ExternalPolicyStore {
             return;
         }
         Map<String, String> policies = readPolicies(context);
-        policies.put(policyKey(feature, packageName), policy);
+        policies.put(policyKey(feature, packageName, activityName), policy);
         writePolicies(context, policies);
     }
 
-    static void clearPolicy(Context context, String feature, String packageName) {
+    static void clearPolicy(
+            Context context,
+            String feature,
+            String packageName,
+            String activityName) {
         if (context == null || TextUtils.isEmpty(packageName)) {
             return;
         }
         Map<String, String> policies = readPolicies(context);
         if (TextUtils.isEmpty(feature)) {
-            policies.remove(policyKey(Features.FLAG_SECURE, packageName));
-            policies.remove(policyKey(Features.SCREEN_CAPTURE_OBSERVER, packageName));
+            policies.remove(policyKey(Features.FLAG_SECURE, packageName, activityName));
+            policies.remove(policyKey(Features.SCREEN_CAPTURE_OBSERVER, packageName, activityName));
         } else {
-            policies.remove(policyKey(feature, packageName));
+            policies.remove(policyKey(feature, packageName, activityName));
         }
         writePolicies(context, policies);
     }
@@ -210,7 +219,23 @@ final class ExternalPolicyStore {
     }
 
     static String policyKey(String feature, String packageName) {
-        return feature + POLICY_KEY_SEPARATOR + packageName;
+        return policyKey(feature, packageName, "");
+    }
+
+    static String policyKey(String feature, String packageName, String activityName) {
+        if (TextUtils.isEmpty(activityName)) {
+            return feature + POLICY_KEY_SEPARATOR + packageName;
+        }
+        return feature + POLICY_KEY_SEPARATOR + packageName + POLICY_KEY_SEPARATOR + activityName;
+    }
+
+    static String policyActivity(String policyKey) {
+        int first = policyKey == null ? -1 : policyKey.indexOf(POLICY_KEY_SEPARATOR);
+        int second = first < 0 ? -1 : policyKey.indexOf(POLICY_KEY_SEPARATOR, first + 1);
+        if (second <= 0 || second >= policyKey.length() - 1) {
+            return "";
+        }
+        return policyKey.substring(second + 1);
     }
 
     static String policyFeature(String policyKey) {
@@ -222,11 +247,18 @@ final class ExternalPolicyStore {
     }
 
     static String policyPackage(String policyKey) {
-        int index = policyKey == null ? -1 : policyKey.indexOf(POLICY_KEY_SEPARATOR);
-        if (index <= 0 || index >= policyKey.length() - 1) {
+        int first = policyKey == null ? -1 : policyKey.indexOf(POLICY_KEY_SEPARATOR);
+        if (first <= 0 || first >= policyKey.length() - 1) {
             return null;
         }
-        return policyKey.substring(index + 1);
+        int second = policyKey.indexOf(POLICY_KEY_SEPARATOR, first + 1);
+        if (second < 0) {
+            return policyKey.substring(first + 1);
+        }
+        if (second == first + 1) {
+            return null;
+        }
+        return policyKey.substring(first + 1, second);
     }
 
     static String eventFieldSeparator() {

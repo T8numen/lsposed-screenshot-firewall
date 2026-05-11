@@ -205,7 +205,10 @@ final class SystemServerHooks {
                 PolicyController.ensureInitialized(context);
                 String packageName = PackageResolver.fromWindowAttrs(context, attrs, param.args);
                 String activityName = PackageResolver.activityFromWindowAttrs(attrs);
-                Decision decision = PolicyController.evaluate(packageName, Features.FLAG_SECURE);
+                Decision decision = PolicyController.evaluate(
+                        packageName,
+                        Features.FLAG_SECURE,
+                        activityName);
                 recordFeatureEvent(context, Features.FLAG_SECURE, packageName, activityName, decision);
                 if (decision == Decision.BLOCK) {
                     attrs.flags &= ~WindowManager.LayoutParams.FLAG_SECURE;
@@ -264,7 +267,8 @@ final class SystemServerHooks {
                 String activityName = PackageResolver.activityFromActivityRecord(activityRecord);
                 Decision decision = PolicyController.evaluate(
                         packageName,
-                        Features.SCREEN_CAPTURE_OBSERVER);
+                        Features.SCREEN_CAPTURE_OBSERVER,
+                        activityName);
                 recordFeatureEvent(
                         context,
                         Features.SCREEN_CAPTURE_OBSERVER,
